@@ -541,6 +541,45 @@ class ConfigCat:
         delete_from_database("categories", self.__name)
 
 
+class ConfigSorter:
+    """Class defining a single sorter"""
+
+    def __init__(self, name: str, values: Dict[str, Any]):
+        self.__name = clean_section_name(name)
+        name = "sorter," + self.__name
+
+        self.enabled = OptionBool(name, "enabled", add=False)
+        self.type = OptionStr(name, "type", add=False)
+        self.categories = OptionList(name, "categories", add=False)
+        self.sort_string = OptionStr(name, "sort_string", add=False)
+
+        self.set_dict(values)
+        add_to_database("sorter", self.__name, self)
+
+    def set_dict(self, values: Dict[str, Any]):
+        """Set one or more fields, passed as dictionary"""
+        for kw in ("enabled", "type", "categories", "sort_string"):
+            try:
+                value = values[kw]
+                getattr(self, kw).set(value)
+            except KeyError:
+                continue
+
+    def get_dict(self, safe: bool = False) -> Dict[str, Any]:
+        """Return a dictionary with all attributes"""
+        output_dict = {}
+        output_dict["name"] = self.__name
+        output_dict["enabled"] = self.enabled()
+        output_dict["type"] = self.type()
+        output_dict["categories"] = self.categories()
+        output_dict["sort_string"] = self.sort_string()
+        return output_dict
+
+    def delete(self):
+        """Remove from database"""
+        delete_from_database("sorter", self.__name)
+
+
 class OptionFilters(Option):
     """Filter list class"""
 
@@ -667,6 +706,7 @@ AllConfigTypes = Union[
     OptionList,
     OptionDir,
     ConfigCat,
+    ConfigSorter,
     ConfigRSS,
     ConfigServer,
 ]
@@ -1033,6 +1073,14 @@ def get_ordered_categories() -> List[Dict]:
     return categories
 
 
+def get_sorters() -> Dict[str, ConfigSorter]:
+    global CFG_DATABASE
+    if "sorters" not in CFG_DATABASE:
+        CFG_DATABASE["sorters"] = {}
+    sorters = CFG_DATABASE["sorters"]
+    return sorters
+
+
 def get_rss() -> Dict[str, ConfigRSS]:
     global CFG_DATABASE
     try:
@@ -1068,7 +1116,7 @@ def get_filename():
 def clean_section_name(section: str) -> str:
     """Make a section name suitable to be used in the INI,
     since it can't have starting "[" or a trailing "]".
-    Unfortuantly, ConfigObj doesn't do this for us."""
+    Unfortunately, ConfigObj doesn't do this for us."""
     new_section_name = section.strip("[]")
     if not new_section_name:
         raise ValueError("Invalid section name %s, nothing left after cleaning" % section)

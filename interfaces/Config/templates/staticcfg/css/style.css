@@ -93,11 +93,10 @@ body {
     padding: 0px;
     font-size: 1.2em;
 }
-.example {
-    background-color: #fefeee;
-}
+
 .presets {
     margin-bottom: -6px;
+    width: 70%
 }
 .presets input {
     margin: 2px 0;
@@ -166,7 +165,7 @@ input[type="checkbox"]+.desc {
     overflow: hidden;
     min-width: 555px;
 }
-.Key tr:nth-child(odd),
+.sorting-key tr:nth-child(odd),
 .tab-pane tr:nth-child(odd),
 .even {
     background-color: #F8F8F8;
@@ -424,21 +423,21 @@ tr.separator {
 .nowrap {
     white-space: nowrap;
 }
-.Key {
+.sorting-key {
     display: none;
     border: 1px solid #ccc;
-    width: 425px;
+    width: 560px;
 }
-.Key th {
+.sorting-key th {
     background: none repeat scroll 0 0 #666;
     color: #fff;
+}
+.sorting-key th,
+.sorting-key td {
     margin: 0;
     padding: 3px 9px;
 }
-.Key td {
-    padding: 2px;
-}
-.Key tr {
+.sorting-key tr {
     border-bottom: 1px solid #ccc;
 }
 #infoTable {
