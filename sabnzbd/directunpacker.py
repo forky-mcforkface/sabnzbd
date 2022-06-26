@@ -35,7 +35,6 @@ from sabnzbd.nzbstuff import NzbObject, NzbFile
 from sabnzbd.encoding import platform_btou
 from sabnzbd.decorators import synchronized
 from sabnzbd.newsunpack import RAR_EXTRACTFROM_RE, RAR_EXTRACTED_RE, rar_volumelist, add_time_left
-from sabnzbd.postproc import prepare_extraction_path
 from sabnzbd.utils.rarfile import RarFile
 from sabnzbd.utils.diskspeed import diskspeedmeasure
 
@@ -57,7 +56,6 @@ class DirectUnpacker(threading.Thread):
         self.killed: bool = False
         self.next_file_lock = threading.Condition(threading.RLock())
 
-        self.unpack_dir_info = None
         self.rarfile_nzf: Optional[NzbFile] = None
         self.cur_setname: Optional[str] = None
         self.cur_volume: int = 0
@@ -282,7 +280,7 @@ class DirectUnpacker(threading.Thread):
                         unpacked_file = m.group(2)
                         if cfg.flat_unpack():
                             unpacked_file = os.path.basename(unpacked_file)
-                        extracted.append(real_path(self.unpack_dir_info[0], unpacked_file))
+                        extracted.append(real_path(self.nzo.unpack_dir_info.tmp_workdir_complete, unpacked_file))
 
             if linebuf.endswith(b"[C]ontinue, [Q]uit "):
                 # Stop timer
@@ -363,16 +361,13 @@ class DirectUnpacker(threading.Thread):
     def create_unrar_instance(self):
         """Start the unrar instance using the user's options"""
         # Generate extraction path and save for post-proc
-        if not self.unpack_dir_info:
+        if not self.nzo.unpack_dir_info:
             try:
-                self.unpack_dir_info = prepare_extraction_path(self.nzo)
+                self.nzo.prepare_extraction_path()
             except:
                 # Prevent fatal crash if directory creation fails
                 self.abort()
                 return
-
-        # Get the information
-        extraction_path, _, _, one_folder, _ = self.unpack_dir_info
 
         # Set options
         if self.nzo.correct_password:
@@ -382,7 +377,7 @@ class DirectUnpacker(threading.Thread):
         else:
             password_command = "-p-"
 
-        if one_folder or cfg.flat_unpack():
+        if self.nzo.unpack_dir_info.one_folder or cfg.flat_unpack():
             action = "e"
         else:
             action = "x"
@@ -411,7 +406,7 @@ class DirectUnpacker(threading.Thread):
                 "-ai",
                 password_command,
                 rarfile_path,
-                "%s\\" % long_path(extraction_path),
+                "%s\\" % long_path(self.nzo.unpack_dir_info.tmp_workdir_complete),
             ]
         else:
             # Don't use "-ai" (not needed for non-Windows)
@@ -479,18 +474,17 @@ class DirectUnpacker(threading.Thread):
             self.success_sets = {}
 
             # Remove files
-            if self.unpack_dir_info:
-                extraction_path, _, _, one_folder, _ = self.unpack_dir_info
+            if self.nzo.unpack_dir_info:
                 # In case of flat-unpack we need to remove the files manually
-                if one_folder:
+                if self.nzo.unpack_dir_info.one_folder:
                     # RarFile can fail for mysterious reasons
                     try:
                         rar_contents = RarFile(
                             os.path.join(self.nzo.download_path, rarfile_nzf.filename), single_file_check=True
                         ).filelist()
                         for rm_file in rar_contents:
-                            # Flat-unpack, so remove foldername from RarFile output
-                            f = os.path.join(extraction_path, os.path.basename(rm_file))
+                            # Flat-unpack, so remove folder name from RarFile output
+                            f = os.path.join(self.nzo.unpack_dir_info.tmp_workdir_complete, os.path.basename(rm_file))
                             remove_file(f)
                     except:
                         # The user will have to remove it themselves
@@ -499,9 +493,9 @@ class DirectUnpacker(threading.Thread):
                         )
                 else:
                     # We can just remove the whole path
-                    remove_all(extraction_path, recursive=True)
+                    remove_all(self.nzo.unpack_dir_info.tmp_workdir_complete, recursive=True)
                 # Remove dir-info
-                self.unpack_dir_info = None
+                self.nzo.unpack_dir_info = None
 
             # Reset settings
             self.reset_active()

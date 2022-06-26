@@ -1244,6 +1244,33 @@ def save_compressed(folder: str, filename: str, data_fp: BinaryIO) -> str:
     return full_nzb_path
 
 
+def set_marker(folder: str) -> Optional[str]:
+    """Set marker file and return name"""
+    name = sabnzbd.cfg.marker_file()
+    if name:
+        path = os.path.join(folder, name)
+        logging.debug("Create marker file %s", path)
+        try:
+            fp = open(path, "w")
+            fp.close()
+        except:
+            logging.info("Cannot create marker file %s", path)
+            logging.info("Traceback: ", exc_info=True)
+            name = None
+    return name
+
+
+def del_marker(path: str):
+    """Remove marker file"""
+    if path and os.path.exists(path):
+        logging.debug("Removing marker file %s", path)
+        try:
+            remove_file(path)
+        except:
+            logging.info("Cannot remove marker file %s", path)
+            logging.info("Traceback: ", exc_info=True)
+
+
 def directory_is_writable_with_file(mydir, myfilename):
     filename = os.path.join(mydir, myfilename)
     if os.path.exists(filename):

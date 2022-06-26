@@ -26,6 +26,7 @@ import datetime
 import threading
 import functools
 import difflib
+from dataclasses import dataclass
 from typing import List, Dict, Any, Tuple, Optional, Union, BinaryIO
 
 # SABnzbd modules
@@ -78,6 +79,9 @@ from sabnzbd.filesystem import (
     is_valid_script,
     has_unwanted_extension,
     create_all_dirs,
+    real_path,
+    sanitize_and_trim_path,
+    set_marker,
 )
 from sabnzbd.par2file import FilePar2Info
 from sabnzbd.decorators import synchronized
@@ -528,6 +532,15 @@ class NzbRejected(Exception):
     pass
 
 
+@dataclass
+class UnpackDirInfo:
+    tmp_workdir_complete: str
+    workdir_complete: str
+    file_sorter: "sabnzbd.sorting.Sorter"
+    one_folder: bool
+    marker_file: str
+
+
 class NzbRejectedToHistory(Exception):
     def __init__(self, nzo_id: str):
         self.nzo_id = nzo_id
@@ -675,6 +688,7 @@ class NzbObject(TryList):
         self.meta = {}
         self.servercount: Dict[str, int] = {}  # Dict to keep bytes per server
         self.direct_unpacker: Optional[sabnzbd.directunpacker.DirectUnpacker] = None  # The DirectUnpacker instance
+        self.unpack_dir_info: Optional[UnpackDirInfo] = None
         self.bytes: int = 0  # Original bytesize
         self.bytes_par2: int = 0  # Bytes available for repair
         self.bytes_downloaded: int = 0  # Downloaded byte
@@ -1981,6 +1995,69 @@ class NzbObject(TryList):
 
         return res, series
 
+    def prepare_extraction_path(self) -> UnpackDirInfo:
+        """Based on the information that we have, generate
+        the extraction path and create the directory.
+        """
+        marker_file = None
+        one_folder = False
+
+        # Determine category directory
+        catdir = config.get_category(self.cat).dir()
+        if not catdir:
+            # If none defined, check Default category directory
+            catdir = config.get_category().dir()
+
+        # Check if it should have a directory
+        if catdir.endswith("*"):
+            catdir = catdir.strip("*")
+            one_folder = True
+
+        complete_dir = real_path(cfg.complete_dir.get_path(), catdir)
+
+        # TV/Movie/Date Renaming code part 1 - detect and construct paths
+        file_sorter = sabnzbd.sorting.Sorter(self, self.cat)
+        complete_dir = file_sorter.detect(self.final_name, complete_dir)
+
+        if file_sorter.sorter_active:
+            one_folder = False
+
+        complete_dir = sanitize_and_trim_path(complete_dir)
+
+        if one_folder:
+            workdir_complete = complete_dir
+        else:
+            workdir_complete = get_unique_dir(os.path.join(complete_dir, self.final_name), create_dir=False)
+
+        # Create directories if not yet done or if Direct Unpack was aborted
+        if not self.unpack_dir_info:
+            workdir_complete = create_all_dirs(workdir_complete, apply_permissions=True)
+
+            # No marker in the case of flat unpack
+            if not one_folder:
+                marker_file = set_marker(workdir_complete)
+
+            if not workdir_complete or not os.path.exists(workdir_complete):
+                logging.error(T("Cannot create final folder %s"), os.path.join(complete_dir, self.final_name))
+                raise IOError
+
+            if cfg.folder_rename() and not one_folder:
+                tmp_workdir_complete = get_unique_dir(prefix(workdir_complete, "_UNPACK_"), create_dir=False)
+                try:
+                    renamer(workdir_complete, tmp_workdir_complete)
+                except:
+                    # On failure, just use the original name
+                    pass
+            else:
+                tmp_workdir_complete = workdir_complete
+
+            self.unpack_dir_info = UnpackDirInfo(
+                tmp_workdir_complete, workdir_complete, file_sorter, one_folder, marker_file
+            )
+        else:
+            # We only update the final folder
+            self.unpack_dir_info.workdir_complete = workdir_complete
+
     def __getstate__(self):
         """Save to pickle file, selecting attributes"""
         dict_ = {}
@@ -2160,3 +2237,11 @@ def matcher(pattern, txt):
         return (not txt) or txt.endswith('"')
     else:
         return False
+
+
+def prefix(path, pre):
+    """Apply prefix to last part of path
+    '/my/path' and 'hi_' will give '/my/hi_path'
+    """
+    p, d = os.path.split(path)
+    return os.path.join(p, pre + d)
