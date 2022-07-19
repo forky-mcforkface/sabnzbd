@@ -17,6 +17,8 @@
 
 import sys
 
+import uvicorn
+
 if sys.hexversion < 0x03070000:
     print("Sorry, requires Python 3.7 or above")
     print("You can read more at: https://sabnzbd.org/wiki/installation/install-off-modules")
@@ -37,6 +39,7 @@ import ssl
 import time
 import re
 import gc
+from threading import Thread
 from typing import List, Dict, Any
 
 try:
@@ -1436,13 +1439,29 @@ def main():
 
     sabnzbd.cfg.log_level.callback(guard_loglevel)
 
-    try:
-        cherrypy.engine.start()
-    except:
-        # Since the webserver is started by cherrypy in a separate thread, we can't really catch any
-        # start-up errors. This try/except only catches very few errors, the rest is only shown in the console.
-        logging.error(T("Failed to start web-interface: "), exc_info=True)
-        abort_and_show_error(browserhost, cherryport)
+    class Server(uvicorn.Server):
+        def install_signal_handlers(self):
+            pass
+
+        def run_in_thread(self):
+            thread = Thread(target=self.run)
+            thread.start()
+
+            while not self.started:
+                time.sleep(1e-3)
+
+    # uvicorn_config = uvicorn.Config(sabnzbd.api.app, host=cherryhost, port=cherryport, log_level="info")
+    # server = Server(config=uvicorn_config)
+
+    uvicorn.run(sabnzbd.interface.app, host=cherryhost, port=cherryport, log_level="info")
+
+    # try:
+    #     cherrypy.engine.start()
+    # except:
+    #     # Since the webserver is started by cherrypy in a separate thread, we can't really catch any
+    #     # start-up errors. This try/except only catches very few errors, the rest is only shown in the console.
+    #     logging.error(T("Failed to start web-interface: "), exc_info=True)
+    #     abort_and_show_error(browserhost, cherryport)
 
     if sabnzbd.WIN32:
         if enable_https:
@@ -1758,7 +1777,7 @@ if __name__ == "__main__":
 
     elif sabnzbd.MACOS and sabnzbd.FOUNDATION:
         # macOS binary runner
-        from threading import Thread
+
         from PyObjCTools import AppHelper
         from AppKit import NSApplication
         from sabnzbd.osxmenu import SABnzbdDelegate

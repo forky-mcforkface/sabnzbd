@@ -381,7 +381,9 @@ def template_filtered_response(file: str, search_list: Dict[str, Any]):
     search_list_copy = copy.deepcopy(search_list)
     # 'filters' is excluded because the RSS-filters are listed twice
     recursive_html_escape(search_list_copy, exclude_items=("webdir", "filters"))
-    return Template(file=file, searchList=[search_list_copy], compilerSettings=CHEETAH_DIRECTIVES).respond()
+    return HTMLResponse(
+        Template(file=file, searchList=[search_list_copy], compilerSettings=CHEETAH_DIRECTIVES).respond()
+    )
 
 
 def log_warning_and_ip(txt):
@@ -426,8 +428,7 @@ class MainPage:
         self.config = ConfigPage("/config/")
         self.wizard = Wizard("/wizard/")
 
-    @secured_expose
-    def index(self, **kwargs):
+    def index(self, kwargs):
         # Redirect to wizard if no servers are set
         if kwargs.get("skip_wizard") or config.get_servers():
             info = build_header()
@@ -2176,3 +2177,32 @@ class ConfigNotify:
             return sabnzbd.api.report()
         else:
             raise Raiser(self.__root)
+
+
+from starlette.applications import Starlette
+from starlette.requests import Request
+from starlette.responses import Response, HTMLResponse
+from starlette.middleware import Middleware
+from starlette.middleware.gzip import GZipMiddleware
+from starlette.routing import Mount, Route
+from starlette.staticfiles import StaticFiles
+from starlette.responses import JSONResponse
+
+
+async def homepage(request: Request):
+    return JSONResponse(api_handler(request.query_params))
+
+
+main_page = MainPage()
+
+routes = [
+    Route("/sabnzbd/", endpoint=main_page.index),
+    Route("/sabnzbd/api", endpoint=homepage),
+    Mount("/sabnzbd/static", app=StaticFiles(directory="interfaces/Glitter/templates/static"), name="static"),
+    Mount("/sabnzbd/staticcfg", app=StaticFiles(directory="interfaces/Config/templates/staticcfg"), name="staticcfg"),
+]
+
+
+middleware = [Middleware(GZipMiddleware)]
+
+app = Starlette(middleware=middleware, routes=routes)
